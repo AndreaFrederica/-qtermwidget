@@ -1,5 +1,7 @@
 # QTermWidget
 
+本仓库为 https://gitee.com/QQxiaoming/qtermwidget 的 Fork（用于在 GitHub 上维护镜像与少量适配改动）。
+
 从 https://github.com/lxqt/qtermwidget.git fork 而来，为了自己的一些开源项目（[quardCRT](https://github.com/QQxiaoming/quardCRT.git)/[quard_star_tutorial](https://github.com/QQxiaoming/quard_star_tutorial.git)）而修改。复用了大量原始代码但同时也大量修改了很多，因此只能作为一个单独的项目存在。
 
 主要修改如下：
