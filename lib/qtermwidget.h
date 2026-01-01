@@ -25,7 +25,7 @@
 #include <QClipboard>
 #include <QTimer>
 #include "Emulation.h"
-#include "Filter.h"
+#include "util/Filter.h"
 
 class QVBoxLayout;
 class SearchBar;
