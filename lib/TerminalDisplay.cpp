@@ -195,10 +195,10 @@ void TerminalDisplay::setColorTable(const ColorEntry table[]) {
 /*
  The VT100 has 32 special graphical characters. The usual vt100 extended
  xterm fonts have these at 0x00..0x1f.
- 
+
  QT's iso mapping leaves 0x00..0x7f without any changes. But the graphicals
  come in here as proper unicode characters.
- 
+
  We treat non-iso10646 fonts as VT100 extended and do the required mapping
  from unicode to 0x00..0x1f. The remaining translation is then left to the
  QCodec.
@@ -269,10 +269,11 @@ void TerminalDisplay::calDrawTextAdditionHeight(QPainter &painter) {
 void TerminalDisplay::setVTFont(const QFont &f) {
     QFont font = f;
 
+    qDebug() << "TerminalDisplay::setVTFont() - Requested font:" << f.family() << "size:" << f.pointSize();
+
     // Check if font is not fixed pitch and print a warning
     if (!QFontInfo(font).fixedPitch()) {
-        // qDebug() << "Using a variable-width font in the terminal.  This may cause
-        // performance degradation and display/alignment errors.";
+        qWarning() << "TerminalDisplay::setVTFont() - Font is not fixed pitch!";
     }
 
     // hint that text should be drawn without anti-aliasing.
@@ -298,6 +299,18 @@ void TerminalDisplay::setVTFont(const QFont &f) {
     QWidget::setFont(font);
     _charWidth->setFont(font);
     fontChange(font);
+
+    // Store the font for forced application in paintEvent
+    // This bypasses Qt's style system which may override our font
+    _terminalFont = font;
+    _terminalFontSet = true;
+
+    // Mark that font was explicitly set to prevent Qt from propagating parent's font
+    setAttribute(Qt::WA_SetFont, true);
+
+    // Verify the font was actually set
+    QFontInfo actualInfo(this->font());
+    qDebug() << "TerminalDisplay::setVTFont() - Actual font after set:" << actualInfo.family() << "size:" << actualInfo.pointSize();
 }
 
 void TerminalDisplay::setFont(const QFont &) {
@@ -905,17 +918,21 @@ void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
     if (style->rendition & RE_CONCEAL)
         return;
 
+    // Use terminal font if set, otherwise fall back to widget font
+    const QFont& baseFont = _terminalFontSet ? _terminalFont : this->font();
+
     // setup bold and underline
     bool useBold =
-            ((style->rendition & RE_BOLD) && _boldIntense) || font().bold();
+            ((style->rendition & RE_BOLD) && _boldIntense) || baseFont.bold();
     const bool useUnderline =
-            style->rendition & RE_UNDERLINE || font().underline();
-    const bool useItalic = style->rendition & RE_ITALIC || font().italic();
+            style->rendition & RE_UNDERLINE || baseFont.underline();
+    const bool useItalic = style->rendition & RE_ITALIC || baseFont.italic();
     const bool useStrikeOut =
-            style->rendition & RE_STRIKEOUT || font().strikeOut();
-    const bool useOverline = style->rendition & RE_OVERLINE || font().overline();
+            style->rendition & RE_STRIKEOUT || baseFont.strikeOut();
+    const bool useOverline = style->rendition & RE_OVERLINE || baseFont.overline();
 
-    QFont font = painter.font();
+    // Start with terminal font if painter doesn't have it
+    QFont font = _terminalFontSet ? _terminalFont : painter.font();
     if (font.bold() != useBold || font.underline() != useUnderline ||
             font.italic() != useItalic || font.strikeOut() != useStrikeOut ||
             font.overline() != useOverline) {
@@ -1582,6 +1599,21 @@ void TerminalDisplay::leaveEvent(QEvent* event)
 
 void TerminalDisplay::paintEvent(QPaintEvent *pe) {
     QPainter paint(this);
+
+    // Force use our stored terminal font, bypassing Qt style system
+    if (_terminalFontSet) {
+        paint.setFont(_terminalFont);
+    }
+
+    // Debug: Check what font the painter has
+    static bool fontDebugPrinted = false;
+    if (!fontDebugPrinted) {
+        qDebug() << "TerminalDisplay::paintEvent() - Widget font:" << font().family() << font().pointSize();
+        qDebug() << "TerminalDisplay::paintEvent() - Painter font (forced):" << paint.font().family() << paint.font().pointSize();
+        qDebug() << "TerminalDisplay::paintEvent() - Terminal font:" << _terminalFont.family() << _terminalFont.pointSize();
+        fontDebugPrinted = true;
+    }
+
     QRect cr = contentsRect();
 
     QPixmap currentBackgroundImage = _backgroundImage;
@@ -1880,7 +1912,7 @@ int TerminalDisplay::textWidth(const int startColumn, const int length, const in
         // Take care of double-column characters and those with small widths.
         // Exclude line characters, as some of them are ambiguous ('A') [1]
         // [1] http://www.unicode.org/Public/UCD/latest/ucd/EastAsianWidth.txt
-        if (_fixedFont_original && !isLineChar(c)) { 
+        if (_fixedFont_original && !isLineChar(c)) {
             // c == 0 may happen here after a double-column character
             result += fm.horizontalAdvance(QLatin1Char(REPCHAR[0]));
         } else {
@@ -1963,7 +1995,7 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
             CharacterColor currentForeground = _image[loc(x, y)].foregroundColor;
             CharacterColor currentBackground = _image[loc(x, y)].backgroundColor;
             quint8 currentRendition = _image[loc(x, y)].rendition;
-            
+
             quint32 nxtC = 0;
             bool nxtDoubleWidth = false;
             int nxtCharWidth = 0;

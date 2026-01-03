@@ -749,7 +749,7 @@ public:
 
     typedef VOID (*ClosePseudoConsolePtr)(HPCON hPC);
 
-    static WindowsContext &instance() 
+    static WindowsContext &instance()
     {
         static WindowsContext ctx;
         return ctx;
@@ -891,7 +891,9 @@ ConPtyProcess::ConPtyProcess()
 
 ConPtyProcess::~ConPtyProcess()
 {
+    qDebug() << "ConPtyProcess::~ConPtyProcess() - Destructor called";
     kill();
+    qDebug() << "ConPtyProcess::~ConPtyProcess() - Destructor complete";
 }
 
 bool ConPtyProcess::startProcess(const QString &executable,
@@ -1039,44 +1041,67 @@ bool ConPtyProcess::resize(qint16 cols, qint16 rows)
 
 bool ConPtyProcess::kill()
 {
+    qDebug() << "ConPtyProcess::kill() - Starting cleanup, PID:" << m_pid;
+
     if (m_ptyHandler != INVALID_HANDLE_VALUE) {
         m_aboutToDestruct = true;
 
         // Close ConPTY - this will terminate client process if running
+        qDebug() << "ConPtyProcess::kill() - Closing pseudo console";
         WindowsContext::instance().closePseudoConsole(m_ptyHandler);
     }
 
     // Clean-up the pipes
-    if (INVALID_HANDLE_VALUE != m_hPipeOut)
+    if (INVALID_HANDLE_VALUE != m_hPipeOut) {
+        qDebug() << "ConPtyProcess::kill() - Closing output pipe";
         CloseHandle(m_hPipeOut);
-    if (INVALID_HANDLE_VALUE != m_hPipeIn)
+    }
+    if (INVALID_HANDLE_VALUE != m_hPipeIn) {
+        qDebug() << "ConPtyProcess::kill() - Closing input pipe";
         CloseHandle(m_hPipeIn);
-
-    if (m_readThread) {
-        m_readThread->requestInterruption();
-        if (!m_readThread->wait(1000))
-            m_readThread->terminate();
-        m_readThread->deleteLater();
-        m_readThread = nullptr;
     }
 
-    delete m_shellCloseWaitNotifier;
-    m_shellCloseWaitNotifier = nullptr;
+    if (m_readThread) {
+        qDebug() << "ConPtyProcess::kill() - Stopping read thread";
+        m_readThread->requestInterruption();
+        if (!m_readThread->wait(1000)) {
+            qDebug() << "ConPtyProcess::kill() - Read thread did not stop, terminating";
+            m_readThread->terminate();
+        }
+        m_readThread->deleteLater();
+        m_readThread = nullptr;
+        qDebug() << "ConPtyProcess::kill() - Read thread stopped";
+    }
+
+    if (m_shellCloseWaitNotifier) {
+        qDebug() << "ConPtyProcess::kill() - Deleting shell close notifier";
+        m_shellCloseWaitNotifier->setEnabled(false);
+        delete m_shellCloseWaitNotifier;
+        m_shellCloseWaitNotifier = nullptr;
+    }
 
     m_pid = 0;
     m_ptyHandler = INVALID_HANDLE_VALUE;
     m_hPipeIn = INVALID_HANDLE_VALUE;
     m_hPipeOut = INVALID_HANDLE_VALUE;
 
-    CloseHandle(m_shellProcessInformation.hThread);
-    CloseHandle(m_shellProcessInformation.hProcess);
+    if (m_shellProcessInformation.hThread) {
+        qDebug() << "ConPtyProcess::kill() - Closing process handles";
+        CloseHandle(m_shellProcessInformation.hThread);
+        CloseHandle(m_shellProcessInformation.hProcess);
+        m_shellProcessInformation.hThread = nullptr;
+        m_shellProcessInformation.hProcess = nullptr;
+    }
 
     // Cleanup attribute list
     if (m_shellStartupInfo.lpAttributeList) {
+        qDebug() << "ConPtyProcess::kill() - Cleaning up attribute list";
         DeleteProcThreadAttributeList(m_shellStartupInfo.lpAttributeList);
         HeapFree(GetProcessHeap(), 0, m_shellStartupInfo.lpAttributeList);
+        m_shellStartupInfo.lpAttributeList = nullptr;
     }
 
+    qDebug() << "ConPtyProcess::kill() - Cleanup complete";
     return true;
 }
 

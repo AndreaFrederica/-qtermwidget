@@ -1,17 +1,17 @@
 /*
  Copyright 2007-2008 by Robert Knight <robertknight@gmail.com>
  Copyright 1997,1998 by Lars Doelle <lars.doelle@on-line.de>
- 
+
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation; either version 2 of the License, or
  (at your option) any later version.
- 
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
- 
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -576,7 +576,7 @@ public slots:
     #endif
     }
     void setMessageParentWidget(QWidget *parent) { messageParentWidget = parent; }
-    
+
     void set_fix_quardCRT_issue33(bool fix) { _fix_quardCRT_issue33 = fix; }
 
 signals:
@@ -731,7 +731,7 @@ private:
     // draws a string of line graphics
     void drawLineCharString(QPainter& painter, int x, int y,
                             const std::wstring& str, const Character* attributes) const;
-    void drawLineCharString(QPainter& painter, int x, int y, 
+    void drawLineCharString(QPainter& painter, int x, int y,
                             wchar_t ch, const Character* attributes) const;
 
     // draws the preedit string for input methods
@@ -945,6 +945,10 @@ private:
     QWidget *messageParentWidget = nullptr;
 
     bool _fix_quardCRT_issue33 = false;
+
+    // Forced terminal font - bypasses Qt style system
+    QFont _terminalFont;
+    bool _terminalFontSet = false;
 };
 
 class AutoScrollHandler : public QObject
