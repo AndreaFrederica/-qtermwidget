@@ -77,22 +77,22 @@ void Screen::cursorUp(int n) {
     if (n == 0)
         n = 1; // Default
     int stop = cuY < _topMargin ? 0 : _topMargin;
-    cuX = qMin(columns - 1, cuX); // nowrap!
-    cuY = qMax(stop, cuY - n);
+    cuX = qMax(0, qMin(columns - 1, cuX)); // nowrap and ensure non-negative!
+    cuY = qMax(stop, qMin(lines - 1, cuY - n));
 }
 
 void Screen::cursorDown(int n) {
     if (n == 0)
         n = 1; // Default
     int stop = cuY > _bottomMargin ? lines - 1 : _bottomMargin;
-    cuX = qMin(columns - 1, cuX); // nowrap!
-    cuY = qMin(stop, cuY + n);
+    cuX = qMax(0, qMin(columns - 1, cuX)); // nowrap and ensure non-negative!
+    cuY = qMin(stop, qMax(0, cuY + n));
 }
 
 void Screen::cursorLeft(int n) {
     if (n == 0)
         n = 1;                      // Default
-    cuX = qMin(columns - 1, cuX); // nowrap!
+    cuX = qMax(0, qMin(columns - 1, cuX)); // nowrap and clamp!
     cuX = qMax(0, cuX - n);
 }
 
@@ -329,20 +329,20 @@ void Screen::setDefaultMargins() {
 
 /*
  Clarifying rendition here and in the display.
- 
+
  currently, the display's color table is
  0       1       2 .. 9    10 .. 17
  dft_fg, dft_bg, dim 0..7, intensive 0..7
- 
+
  currentForeground, currentBackground contain values 0..8;
  - 0    = default color
  - 1..8 = ansi specified color
- 
+
  re_fg, re_bg contain values 0..17
  due to the TerminalDisplay's color table
- 
+
  rendition attributes are
- 
+
  attr           widget screen
  -------------- ------ ------
  RE_UNDERLINE     XX     XX    affects foreground only
@@ -351,7 +351,7 @@ void Screen::setDefaultMargins() {
  RE_REVERSE       --     XX
  RE_TRANSPARENT   XX     --    affects background only
  RE_INTENSIVE     XX     --    affects foreground only
- 
+
  Note that RE_BOLD is used in both widget
  and screen rendition. Since xterm/vt102
  is to poor to distinguish between bold
@@ -604,6 +604,9 @@ void Screen::newLine() {
     if (getMode(MODE_NewLine))
         toStartOfLine();
     index();
+    // Ensure cursor position is valid after newline
+    cuX = qMax(0, qMin(columns - 1, cuX));
+    cuY = qMax(0, qMin(lines - 1, cuY));
 }
 
 void Screen::checkSelection(int from, int to) {
@@ -635,7 +638,7 @@ void Screen::displayCharacter(wchar_t c) {
         do {
             if (charToCombineWithX > 0) {
                 --charToCombineWithX;
-            } else if (charToCombineWithY > 0 && lineProperties.at(charToCombineWithY - 1) & LINE_WRAPPED) { 
+            } else if (charToCombineWithY > 0 && lineProperties.at(charToCombineWithY - 1) & LINE_WRAPPED) {
                 // Try previous line
                 --charToCombineWithY;
                 charToCombineWithX = screenLines[charToCombineWithY].length() - 1;
@@ -769,10 +772,20 @@ void Screen::scrollUp(int from, int n) {
     _lastScrolledRegion =
             QRect(0, _topMargin, columns - 1, (_bottomMargin - _topMargin));
 
-    // FIXME: make sure `topMargin', `bottomMargin', `from', `n' is in bounds.
-    moveImage(loc(0, from), loc(0, from + n), loc(columns, _bottomMargin));
-    clearImage(loc(0, _bottomMargin - n + 1), loc(columns - 1, _bottomMargin),
-                         ' ');
+    // Ensure bounds are valid
+    from = qMax(0, qMin(lines - 1, from));
+    int sourceEnd = qMin(lines - 1, _bottomMargin);
+    int sourceStart = qMin(sourceEnd, from + n);
+
+    if (sourceStart <= sourceEnd) {
+        moveImage(loc(0, from), loc(0, sourceStart), loc(columns - 1, sourceEnd));
+    }
+
+    int clearStart = qMax(from, _bottomMargin - n + 1);
+    int clearEnd = _bottomMargin;
+    if (clearStart <= clearEnd && clearStart >= 0 && clearEnd < lines) {
+        clearImage(loc(0, clearStart), loc(columns - 1, clearEnd), ' ');
+    }
 }
 
 void Screen::scrollDown(int n) {
@@ -784,16 +797,27 @@ void Screen::scrollDown(int n) {
 void Screen::scrollDown(int from, int n) {
     _scrolledLines += n;
 
-    // FIXME: make sure `topMargin', `bottomMargin', `from', `n' is in bounds.
+    // Ensure bounds are valid
     if (n <= 0)
         return;
-    if (from > _bottomMargin)
+    if (from > _bottomMargin || from < 0)
         return;
     if (from + n > _bottomMargin)
         n = _bottomMargin - from;
-    moveImage(loc(0, from + n), loc(0, from),
-                        loc(columns - 1, _bottomMargin - n));
-    clearImage(loc(0, from), loc(columns - 1, from + n - 1), ' ');
+
+    from = qMax(0, qMin(lines - 1, from));
+    int destLine = qMin(lines - 1, from + n);
+    int sourceEnd = qMax(0, qMin(lines - 1, _bottomMargin - n));
+
+    if (from <= sourceEnd && destLine < lines) {
+        moveImage(loc(0, destLine), loc(0, from),
+                            loc(columns - 1, sourceEnd));
+    }
+
+    int clearEnd = qMin(lines - 1, qMin(_bottomMargin, from + n - 1));
+    if (from <= clearEnd && from >= 0) {
+        clearImage(loc(0, from), loc(columns - 1, clearEnd), ' ');
+    }
 }
 
 void Screen::setCursorYX(int y, int x) {
@@ -805,14 +829,25 @@ void Screen::setCursorX(int x) {
     if (x == 0)
         x = 1; // Default
     x -= 1;  // Adjust
-    cuX = qMax(0, qMin(columns - 1, x));
+    // Ensure columns is valid before using it
+    if (columns > 0) {
+        cuX = qMax(0, qMin(columns - 1, x));
+    } else {
+        cuX = 0;
+    }
 }
 
 void Screen::setCursorY(int y) {
     if (y == 0)
         y = 1; // Default
     y -= 1;  // Adjust
-    cuY = qMax(0, qMin(lines - 1, y + (getMode(MODE_Origin) ? _topMargin : 0)));
+    int newY = y + (getMode(MODE_Origin) ? _topMargin : 0);
+    // Ensure lines is valid before using it
+    if (lines > 0) {
+        cuY = qMax(0, qMin(lines - 1, newY));
+    } else {
+        cuY = 0;
+    }
 }
 
 void Screen::home() {
@@ -871,8 +906,20 @@ QString Screen::getScreenText(int row1, int col1, int row2, int col2, int mode) 
 }
 
 void Screen::clearImage(int loca, int loce, char c) {
+    // Validate input parameters
+    if (columns <= 0 || lines <= 0)
+        return;
+
+    // Ensure loca and loce are within valid bounds
+    const int imageSize = columns * lines;
+    loca = qMax(0, qMin(imageSize - 1, loca));
+    loce = qMax(0, qMin(imageSize - 1, loce));
+
+    // Ensure loca <= loce
+    if (loca > loce)
+        return;
+
     int scr_TL = loc(0, history->getLines());
-    // FIXME: check positions
 
     // Clear entire selection if it overlaps region to be moved...
     if ((selBottomRight > (loca + scr_TL)) && (selTopLeft < (loce + scr_TL))) {
@@ -881,6 +928,10 @@ void Screen::clearImage(int loca, int loce, char c) {
 
     int topLine = loca / columns;
     int bottomLine = loce / columns;
+
+    // Additional bounds check for lines
+    topLine = qMax(0, qMin(lines - 1, topLine));
+    bottomLine = qMax(0, qMin(lines - 1, bottomLine));
 
     Character clearCh(c, currentForeground, currentBackground, DEFAULT_RENDITION);
 
@@ -912,7 +963,37 @@ void Screen::clearImage(int loca, int loce, char c) {
 void Screen::moveImage(int dest, int sourceBegin, int sourceEnd) {
     Q_ASSERT(sourceBegin <= sourceEnd);
 
-    int lines = (sourceEnd - sourceBegin) / columns;
+    // Validate parameters
+    if (columns <= 0 || lines <= 0)
+        return;
+
+    const int imageSize = columns * lines;
+
+    // Clamp all positions to valid ranges
+    dest = qMax(0, qMin(imageSize - 1, dest));
+    sourceBegin = qMax(0, qMin(imageSize - 1, sourceBegin));
+    sourceEnd = qMax(0, qMin(imageSize - 1, sourceEnd));
+
+    // Re-validate after clamping
+    if (sourceBegin > sourceEnd)
+        return;
+
+    int numLines = (sourceEnd - sourceBegin) / columns;
+
+    // Ensure we don't exceed screen boundaries
+    int destLine = dest / columns;
+    int sourceBeginLine = sourceBegin / columns;
+    int sourceEndLine = sourceEnd / columns;
+
+    if (destLine >= lines || sourceBeginLine >= lines || sourceEndLine >= lines)
+        return;
+
+    // Additional check: ensure the move won't go out of bounds
+    if (destLine + numLines >= lines)
+        numLines = lines - destLine - 1;
+
+    if (numLines < 0)
+        return;
 
     // move screen image and line properties:
     // the source and destination areas of the image may overlap,
@@ -920,18 +1001,22 @@ void Screen::moveImage(int dest, int sourceBegin, int sourceEnd) {
     // forwards if dest < sourceBegin or backwards otherwise.
     //(search the web for 'memmove implementation' for details)
     if (dest < sourceBegin) {
-        for (int i = 0; i <= lines; i++) {
-            screenLines[(dest / columns) + i] =
-                    screenLines[(sourceBegin / columns) + i];
-            lineProperties[(dest / columns) + i] =
-                    lineProperties[(sourceBegin / columns) + i];
+        for (int i = 0; i <= numLines; i++) {
+            int destIdx = (dest / columns) + i;
+            int srcIdx = (sourceBegin / columns) + i;
+            if (destIdx < lines && srcIdx < lines) {
+                screenLines[destIdx] = screenLines[srcIdx];
+                lineProperties[destIdx] = lineProperties[srcIdx];
+            }
         }
     } else {
-        for (int i = lines; i >= 0; i--) {
-            screenLines[(dest / columns) + i] =
-                    screenLines[(sourceBegin / columns) + i];
-            lineProperties[(dest / columns) + i] =
-                    lineProperties[(sourceBegin / columns) + i];
+        for (int i = numLines; i >= 0; i--) {
+            int destIdx = (dest / columns) + i;
+            int srcIdx = (sourceBegin / columns) + i;
+            if (destIdx < lines && srcIdx < lines) {
+                screenLines[destIdx] = screenLines[srcIdx];
+                lineProperties[destIdx] = lineProperties[srcIdx];
+            }
         }
     }
 
@@ -992,6 +1077,10 @@ void Screen::clearEntireScreen() {
     }
 
     clearImage(loc(0, 0), loc(columns - 1, lines - 1), ' ');
+
+    // Reset cursor position to avoid orphaned cursor positions
+    cuX = qMax(0, qMin(columns - 1, cuX));
+    cuY = qMax(0, qMin(lines - 1, cuY));
 }
 
 /*! fill screen with 'E'

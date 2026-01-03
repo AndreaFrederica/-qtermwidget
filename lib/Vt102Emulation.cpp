@@ -1,19 +1,19 @@
 /*
  This file is part of Konsole, an X terminal.
- 
+
  Copyright 2007-2008 by Robert Knight <robert.knight@gmail.com>
  Copyright 1997,1998 by Lars Doelle <lars.doelle@on-line.de>
- 
+
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation; either version 2 of the License, or
  (at your option) any later version.
- 
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
- 
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -593,6 +593,20 @@ void Vt102Emulation::doTitleChanged(int what, const QString &caption) {
 */
 
 void Vt102Emulation::processToken(int token, wchar_t p, int q) {
+    // Validate parameters to prevent invalid control sequences
+    // from causing cursor position errors or display corruption
+    const int MAX_SCREEN_DIMENSION = 10000; // Reasonable maximum for terminals
+
+    // Clamp p and q to reasonable ranges for cursor positioning and other operations
+    if (static_cast<int>(p) < 0)
+        p = 0;
+    if (static_cast<int>(p) > MAX_SCREEN_DIMENSION)
+        p = MAX_SCREEN_DIMENSION;
+    if (q < 0)
+        q = 0;
+    if (q > MAX_SCREEN_DIMENSION)
+        q = MAX_SCREEN_DIMENSION;
+
     switch (token) {
     case TY_CHR():
         _currentScreen->displayCharacter(p);

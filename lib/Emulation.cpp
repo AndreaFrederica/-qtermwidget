@@ -2,17 +2,17 @@
  Copyright 2007-2008 Robert Knight <robertknight@gmail.com>
  Copyright 1997,1998 by Lars Doelle <lars.doelle@on-line.de>
  Copyright 1996 by Matthias Ettrich <ettrich@kde.org>
- 
+
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation; either version 2 of the License, or
  (at your option) any later version.
- 
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
- 
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -68,12 +68,12 @@ Emulation::Emulation()
     });
 }
 
-bool Emulation::programUsesMouse() const { 
-    return _usesMouse; 
+bool Emulation::programUsesMouse() const {
+    return _usesMouse;
 }
 
-void Emulation::usesMouseChanged(bool usesMouse) { 
-    _usesMouse = usesMouse; 
+void Emulation::usesMouseChanged(bool usesMouse) {
+    _usesMouse = usesMouse;
 }
 
 bool Emulation::programBracketedPasteMode() const {
@@ -170,8 +170,8 @@ void Emulation::setKeyBindings(const QString &name) {
     }
 }
 
-QString Emulation::keyBindings() const { 
-    return _keyTranslator->name(); 
+QString Emulation::keyBindings() const {
+    return _keyTranslator->name();
 }
 
 // process application unicode input to terminal
@@ -240,6 +240,18 @@ void Emulation::receiveData(const char *text, int length) {
     for (wchar_t i : unicodeText)
         receiveChar(i);
 
+    // Force immediate update after processing data to improve responsiveness
+    // This helps synchronize user input with program output
+    if (length > 0) {
+        // Stop timers and force immediate update for better sync
+        _bulkTimer1.stop();
+        emit outputChanged();
+        _currentScreen->resetScrolledLines();
+        _currentScreen->resetDroppedLines();
+        // Restart buffered update mechanism
+        bufferedUpdate();
+    }
+
     // look for z-modem indicator
     //-- someone who understands more about z-modems that I do may be able to move
     // this check into the above for loop?
@@ -300,8 +312,10 @@ void Emulation::showBulk() {
 }
 
 void Emulation::bufferedUpdate() {
-    static const int BULK_TIMEOUT1 = 10;
-    static const int BULK_TIMEOUT2 = 40;
+    // Reduced timeout values for faster response
+    // Previous values (10ms/40ms) caused noticeable lag
+    static const int BULK_TIMEOUT1 = 5;   // Reduced from 10ms
+    static const int BULK_TIMEOUT2 = 20;  // Reduced from 40ms
 
     _bulkTimer1.setSingleShot(true);
     _bulkTimer1.start(BULK_TIMEOUT1);
@@ -311,8 +325,8 @@ void Emulation::bufferedUpdate() {
     }
 }
 
-char Emulation::eraseChar() const { 
-    return '\b'; 
+char Emulation::eraseChar() const {
+    return '\b';
 }
 
 void Emulation::setImageSize(int lines, int columns) {
@@ -363,7 +377,7 @@ bool ExtendedCharTable::extendedCharMatch(uint hash , uint* unicodePoints , usho
     return true;
 }
 
-uint ExtendedCharTable::createExtendedChar(uint* unicodePoints , ushort length) {    
+uint ExtendedCharTable::createExtendedChar(uint* unicodePoints , ushort length) {
     // look for this sequence of points in the table
     uint hash = extendedCharHash(unicodePoints,length);
     const uint initialHash = hash;

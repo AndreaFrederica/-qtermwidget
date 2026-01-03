@@ -1151,9 +1151,16 @@ void TerminalDisplay::scrollImage(int lines, const QRect &screenWindowRegion) {
     QRect region = screenWindowRegion;
     region.setBottom(qMin(region.bottom(), this->_lines - 2));
 
-    // return if there is nothing to do
-    if (lines == 0 || _image == nullptr || !region.isValid() ||
-            (region.top() + abs(lines)) >= region.bottom() ||
+    // Validate basic preconditions
+    if (lines == 0 || _image == nullptr || !region.isValid())
+        return;
+
+    // Ensure columns and image size are valid
+    if (this->_columns <= 0 || this->_lines <= 0 || _imageSize <= 0)
+        return;
+
+    // Additional validation for scroll region
+    if ((region.top() + abs(lines)) >= region.bottom() ||
             this->_lines <= region.height())
         return;
 
@@ -2202,24 +2209,34 @@ void TerminalDisplay::scrollBarPositionChanged(int) {
     const bool atEndOfOutput = (_scrollBar->value() == _scrollBar->maximum());
     _screenWindow->setTrackOutput(atEndOfOutput);
 
+    // Force immediate update to prevent rendering artifacts
     updateImage();
+    update();
 }
 
 void TerminalDisplay::setScroll(int cursor, int slines) {
+    // Validate input parameters
+    if (_lines <= 0 || slines < 0)
+        return;
+
+    cursor = qMax(0, cursor);
+    const int maxScroll = qMax(0, slines - _lines);
+    cursor = qMin(cursor, maxScroll);
+
     // update _scrollBar if the range or value has changed,
     // otherwise return
     //
     // setting the range or value of a _scrollBar will always trigger
     // a repaint, so it should be avoided if it is not necessary
     if (_scrollBar->minimum() == 0 &&
-            _scrollBar->maximum() == (slines - _lines) &&
+            _scrollBar->maximum() == maxScroll &&
             _scrollBar->value() == cursor) {
         return;
     }
 
     disconnect(_scrollBar, &QScrollBar::valueChanged, this,
                          &TerminalDisplay::scrollBarPositionChanged);
-    _scrollBar->setRange(0, slines - _lines);
+    _scrollBar->setRange(0, maxScroll);
     _scrollBar->setSingleStep(1);
     _scrollBar->setPageStep(_lines);
     _scrollBar->setValue(cursor);
